@@ -1,4 +1,4 @@
-use core::time::Duration;
+use std::time::Duration;
 use std::error::Error;
 use rss::Channel;
 use chrono::{DateTime, Utc};
@@ -73,8 +73,7 @@ impl SourceforgeDownloader {
 
 fn new_http_client() -> reqwest::Client {
     reqwest::ClientBuilder::new()
-        .connect_timeout(Duration::from_secs(5))
-        .read_timeout(Duration::from_secs(5))
+        .connect_timeout(Duration::from_secs(10))
         .cookie_store(true)
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         .build()
