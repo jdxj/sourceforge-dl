@@ -2,9 +2,10 @@ use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use http::header::{ACCEPT, ACCEPT_ENCODING};
 use log::{debug, error, info};
-use reqwest::redirect::Policy;
+use reqwest::header::HeaderMap;
 use rss::Channel;
 use std::{cmp::Ordering, error::Error, fs::File, io::Write, path::Path, time::Duration};
+use teloxide::prelude::*;
 
 #[derive(Debug)]
 struct FileMetaInfo {
@@ -53,13 +54,18 @@ impl PartialOrd for FileMetaInfo {
 pub struct SourceforgeDownloader {
     rss_url: String,
     http_client: reqwest::Client,
+
+    chat_id: ChatId,
+    tg_client: Bot,
 }
 
 impl SourceforgeDownloader {
-    pub fn new(rss_url: &str) -> Self {
+    pub fn new(rss_url: &str, user_id: u64, token: &str) -> Self {
         SourceforgeDownloader {
             rss_url: rss_url.to_string(),
             http_client: new_http_client(),
+            chat_id: UserId(user_id).into(),
+            tg_client: Bot::new(token),
         }
     }
 
@@ -123,10 +129,16 @@ impl SourceforgeDownloader {
         }
         Ok(())
     }
+
+    async fn send_message(&self, text: &str) {
+        if let Err(e) = self.tg_client.send_message(self.chat_id, text).await {
+            error!("send message err: {:?}", e)
+        }
+    }
 }
 
 fn new_http_client() -> reqwest::Client {
-    let mut header_map = reqwest::header::HeaderMap::new();
+    let mut header_map = HeaderMap::new();
     header_map.insert(ACCEPT, "*/*".parse().unwrap());
     header_map.insert(ACCEPT_ENCODING, "identity".parse().unwrap());
 
@@ -145,7 +157,7 @@ mod tests {
     use std::env;
 
     fn setup() {
-        env::set_var("RUST_LOG", "reqwest=trace");
+        env::set_var("RUST_LOG", "reqwest=trace,sourceforge_dl=debug");
         env_logger::init()
     }
 
@@ -155,6 +167,8 @@ mod tests {
 
         let sdl = SourceforgeDownloader::new(
             "https://sourceforge.net/projects/evolution-x/rss?path=/raphael/14",
+            123,
+            "hello",
         );
         match sdl.get_latest_file().await {
             Ok(file) => {
@@ -172,6 +186,8 @@ mod tests {
 
         let sdl = SourceforgeDownloader::new(
             "https://sourceforge.net/projects/bettercap.mirror/rss?path=/v2.32.0",
+            123,
+            "hello",
         );
         let file_meta_info = sdl.get_latest_file().await.unwrap();
         let save_path = "/tmp/".to_string() + &file_meta_info.name;
@@ -184,5 +200,16 @@ mod tests {
         {
             eprintln!("{:?}", e)
         }
+    }
+
+    #[tokio::test]
+    async fn test_send_message() {
+        setup();
+
+        let user_id = env::var("USER_ID").unwrap().parse::<u64>().unwrap();
+        let token = env::var("TELOXIDE_TOKEN").unwrap();
+
+        let sdl = SourceforgeDownloader::new("", user_id, token.as_str());
+        sdl.send_message("hello world").await
     }
 }

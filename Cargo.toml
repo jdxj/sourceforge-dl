@@ -14,3 +14,4 @@ log = "0.4"
 env_logger = "0.11"
 futures-util = "0.3"
 http = "1.0.0"
+teloxide = { version = "0.12", features = ["macros"] }
