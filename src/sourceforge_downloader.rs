@@ -1,3 +1,4 @@
+use axum::Router;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use http::header::{ACCEPT, ACCEPT_ENCODING};
@@ -6,6 +7,7 @@ use reqwest::header::HeaderMap;
 use rss::Channel;
 use std::{cmp::Ordering, error::Error, fs::File, io::Write, path::Path, time::Duration};
 use teloxide::prelude::*;
+use tower_http::services::ServeDir;
 
 #[derive(Debug)]
 struct FileMetaInfo {
@@ -69,6 +71,7 @@ impl SourceforgeDownloader {
         }
     }
 
+    /// 获取最新的文件信息
     async fn get_latest_file(&self) -> Result<FileMetaInfo, Box<dyn Error>> {
         // 获取 rss 内容
         let req = self.http_client.get(&self.rss_url).build()?;
@@ -112,6 +115,7 @@ impl SourceforgeDownloader {
         Ok(file)
     }
 
+    /// 下载文件
     async fn download_file(
         &self,
         save_path: &str,
@@ -130,13 +134,23 @@ impl SourceforgeDownloader {
         Ok(())
     }
 
+    /// 发送 tg 消息
     async fn send_message(&self, text: &str) {
         if let Err(e) = self.tg_client.send_message(self.chat_id, text).await {
             error!("send message err: {:?}", e)
         }
     }
+
+    /// 启动静态文件服务
+    async fn start_static_file_server(&self) {
+        let app = Router::new().nest_service("/assets", ServeDir::new("assets"));
+
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+        axum::serve(listener, app).await.unwrap();
+    }
 }
 
+/// 创建 http 客户端
 fn new_http_client() -> reqwest::Client {
     let mut header_map = HeaderMap::new();
     header_map.insert(ACCEPT, "*/*".parse().unwrap());
@@ -211,5 +225,14 @@ mod tests {
 
         let sdl = SourceforgeDownloader::new("", user_id, token.as_str());
         sdl.send_message("hello world").await
+    }
+
+    #[tokio::test]
+    async fn file_server() {
+        setup();
+
+        let sdl = SourceforgeDownloader::new("", 0, "");
+
+        sdl.start_static_file_server().await;
     }
 }

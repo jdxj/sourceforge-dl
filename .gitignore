@@ -21,3 +21,5 @@ target/
 # Added by manual
 
 .idea
+assets/*
+!assets/.keep
