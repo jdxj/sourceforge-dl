@@ -79,16 +79,33 @@ impl SourceforgeDownloader {
 
     /// 定时获取最新文件
     async fn start_get_latest_file_job(&self) {
+        // 避免 self 进入闭包导致 static 生命周期问题, 这里克隆一次
         let inner_clone = self.inner.clone();
         let task = TaskBuilder::default()
-            .set_frequency_repeated_by_cron_str("*/5 * * * * * *")
+            .set_frequency_repeated_by_cron_str("*/20 * * * * * *")
+            // 把 inner_clone 移到 Fn 闭包中
             .spawn_async_routine(move || {
+                // 再克隆一个 inner_clone 给 async 使用
                 let inner_clone = inner_clone.clone();
-                async move {
+                async {
                     match inner_clone.get_latest_file().await {
                         Ok(fmi) => {
-                            // todo: 下载文件
-                            println!("fmi: {:?}", fmi)
+                            let save_path = "assets/".to_string() + fmi.name.as_str();
+                            let path = Path::new(&save_path);
+                            // 下载过就不下载了
+                            if let Ok(true) = path.try_exists() {
+                                return;
+                            }
+
+                            // 启动一个新 task 来下载
+                            tokio::spawn(async move {
+                                match inner_clone.download_file(&save_path, &fmi).await {
+                                    Err(e) => {
+                                        eprintln!("download file err: {:?}", e);
+                                    }
+                                    _ => {}
+                                }
+                            });
                         }
                         Err(e) => eprintln!("error: {:?}", e),
                     }
@@ -165,10 +182,12 @@ impl SourceforgeDownloaderRef {
     async fn download_file(
         &self,
         save_path: &str,
-        download_url: &str,
+        file_meta_info: &FileMetaInfo,
     ) -> Result<(), Box<dyn Error>> {
+        debug!("开始下载: {:?}", file_meta_info);
+
         // 下载文件
-        let req = self.http_client.get(download_url).build()?;
+        let req = self.http_client.get(&file_meta_info.download_url).build()?;
         let res = self.http_client.execute(req).await?;
         let mut stream = res.bytes_stream();
         // 保存到本地
@@ -177,6 +196,10 @@ impl SourceforgeDownloaderRef {
             let chunk = item?;
             file.write_all(&chunk)?;
         }
+
+        debug!("下载完成: {:?}", file_meta_info);
+        let text = format!("下载完成: {:?}", file_meta_info);
+        self.send_message(&text).await;
         Ok(())
     }
 
@@ -248,10 +271,7 @@ mod tests {
 
         println!("download_url: {:?}", &file_meta_info.download_url);
 
-        if let Err(e) = sdl
-            .download_file(&save_path, &file_meta_info.download_url)
-            .await
-        {
+        if let Err(e) = sdl.download_file(&save_path, &file_meta_info).await {
             eprintln!("{:?}", e)
         }
     }
@@ -281,10 +301,11 @@ mod tests {
         setup();
 
         let rss_url = "https://sourceforge.net/projects/evolution-x/rss?path=/raphael/14";
+        let rss_url2 = "https://sourceforge.net/projects/bettercap.mirror/rss?path=/v2.32.0";
         let user_id = env::var("USER_ID").unwrap().parse::<u64>().unwrap();
         let token = env::var("TELOXIDE_TOKEN").unwrap();
 
-        let sdl = SourceforgeDownloader::new(rss_url, user_id, token.as_str());
+        let sdl = SourceforgeDownloader::new(rss_url2, user_id, token.as_str());
 
         sdl.start_get_latest_file_job().await;
         sleep(Duration::from_secs(100)).await;
