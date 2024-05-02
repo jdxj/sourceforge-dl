@@ -1,11 +1,14 @@
 use axum::Router;
 use chrono::{DateTime, Utc};
+use delay_timer::prelude::*;
 use futures_util::StreamExt;
 use http::header::{ACCEPT, ACCEPT_ENCODING};
 use log::{debug, error, info};
 use reqwest::header::HeaderMap;
 use rss::Channel;
-use std::{cmp::Ordering, error::Error, fs::File, io::Write, path::Path, time::Duration};
+use std::{
+    cmp::Ordering, error::Error, fs::File, io::Write, path::Path, sync::Arc, time::Duration,
+};
 use teloxide::prelude::*;
 use tower_http::services::ServeDir;
 
@@ -54,6 +57,49 @@ impl PartialOrd for FileMetaInfo {
 }
 
 pub struct SourceforgeDownloader {
+    inner: Arc<SourceforgeDownloaderRef>,
+    delay_timer: DelayTimer,
+}
+
+impl SourceforgeDownloader {
+    pub fn new(rss_url: &str, user_id: u64, token: &str) -> Self {
+        SourceforgeDownloader {
+            inner: Arc::new(SourceforgeDownloaderRef::new(rss_url, user_id, token)),
+            delay_timer: DelayTimer::new(),
+        }
+    }
+
+    /// 启动静态文件服务
+    async fn start_static_file_server(&self) {
+        let app = Router::new().nest_service("/assets", ServeDir::new("assets"));
+
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+        axum::serve(listener, app).await.unwrap();
+    }
+
+    /// 定时获取最新文件
+    async fn start_get_latest_file_job(&self) {
+        let inner_clone = self.inner.clone();
+        let task = TaskBuilder::default()
+            .set_frequency_repeated_by_cron_str("*/5 * * * * * *")
+            .spawn_async_routine(move || {
+                let inner_clone = inner_clone.clone();
+                async move {
+                    match inner_clone.get_latest_file().await {
+                        Ok(fmi) => {
+                            // todo: 下载文件
+                            println!("fmi: {:?}", fmi)
+                        }
+                        Err(e) => eprintln!("error: {:?}", e),
+                    }
+                }
+            })
+            .unwrap();
+        self.delay_timer.add_task(task).unwrap()
+    }
+}
+
+struct SourceforgeDownloaderRef {
     rss_url: String,
     http_client: reqwest::Client,
 
@@ -61,9 +107,9 @@ pub struct SourceforgeDownloader {
     tg_client: Bot,
 }
 
-impl SourceforgeDownloader {
-    pub fn new(rss_url: &str, user_id: u64, token: &str) -> Self {
-        SourceforgeDownloader {
+impl SourceforgeDownloaderRef {
+    fn new(rss_url: &str, user_id: u64, token: &str) -> Self {
+        SourceforgeDownloaderRef {
             rss_url: rss_url.to_string(),
             http_client: new_http_client(),
             chat_id: UserId(user_id).into(),
@@ -140,14 +186,6 @@ impl SourceforgeDownloader {
             error!("send message err: {:?}", e)
         }
     }
-
-    /// 启动静态文件服务
-    async fn start_static_file_server(&self) {
-        let app = Router::new().nest_service("/assets", ServeDir::new("assets"));
-
-        let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
-        axum::serve(listener, app).await.unwrap();
-    }
 }
 
 /// 创建 http 客户端
@@ -167,8 +205,10 @@ fn new_http_client() -> reqwest::Client {
 
 #[cfg(test)]
 mod tests {
-    use crate::sourceforge_downloader::SourceforgeDownloader;
+    use crate::sourceforge_downloader::{SourceforgeDownloader, SourceforgeDownloaderRef};
     use std::env;
+    use std::time::Duration;
+    use tokio::time::sleep;
 
     fn setup() {
         env::set_var("RUST_LOG", "reqwest=trace,sourceforge_dl=debug");
@@ -179,7 +219,7 @@ mod tests {
     async fn get_latest_file() {
         setup();
 
-        let sdl = SourceforgeDownloader::new(
+        let sdl = SourceforgeDownloaderRef::new(
             "https://sourceforge.net/projects/evolution-x/rss?path=/raphael/14",
             123,
             "hello",
@@ -198,7 +238,7 @@ mod tests {
     async fn download_file() {
         setup();
 
-        let sdl = SourceforgeDownloader::new(
+        let sdl = SourceforgeDownloaderRef::new(
             "https://sourceforge.net/projects/bettercap.mirror/rss?path=/v2.32.0",
             123,
             "hello",
@@ -223,7 +263,7 @@ mod tests {
         let user_id = env::var("USER_ID").unwrap().parse::<u64>().unwrap();
         let token = env::var("TELOXIDE_TOKEN").unwrap();
 
-        let sdl = SourceforgeDownloader::new("", user_id, token.as_str());
+        let sdl = SourceforgeDownloaderRef::new("", user_id, token.as_str());
         sdl.send_message("hello world").await
     }
 
@@ -234,5 +274,19 @@ mod tests {
         let sdl = SourceforgeDownloader::new("", 0, "");
 
         sdl.start_static_file_server().await;
+    }
+
+    #[tokio::test]
+    async fn star_get_latest_file_job() {
+        setup();
+
+        let rss_url = "https://sourceforge.net/projects/evolution-x/rss?path=/raphael/14";
+        let user_id = env::var("USER_ID").unwrap().parse::<u64>().unwrap();
+        let token = env::var("TELOXIDE_TOKEN").unwrap();
+
+        let sdl = SourceforgeDownloader::new(rss_url, user_id, token.as_str());
+
+        sdl.start_get_latest_file_job().await;
+        sleep(Duration::from_secs(100)).await;
     }
 }

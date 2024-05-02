@@ -18,3 +18,4 @@ teloxide = { version = "0.12", features = ["macros"] }
 axum = "0.7"
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5.0", features = ["fs", "trace"] }
+delay_timer = "0.11"
