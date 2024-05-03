@@ -7,14 +7,14 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.37", features = ["full"] }
-reqwest = { version = "0.12", features = ["cookies", "stream"] }
+reqwest = { version = "0.12", features = ["cookies", "stream", "rustls-tls"] }
 rss = "2.0"
 chrono = "0.4"
 log = "0.4"
 env_logger = "0.11"
 futures-util = "0.3"
 http = "1.0.0"
-teloxide = { version = "0.12", features = ["macros"] }
+teloxide = { version = "0.12", features = ["macros", "rustls"] }
 axum = "0.7"
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5.0", features = ["fs", "trace"] }

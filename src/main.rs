@@ -1,6 +1,7 @@
 mod sourceforge_downloader;
 
 use clap::Parser;
+use log::debug;
 use sourceforge_downloader::{SourceforgeDownloader, SourceforgeDownloaderConfig};
 use tokio::join;
 
@@ -47,6 +48,8 @@ async fn main() {
         cron: cli.cron,
         listen_addr: cli.listen_addr,
     };
+
+    debug!("starting");
 
     let sdl = SourceforgeDownloader::new(&sdc);
     join!(
