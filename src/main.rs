@@ -15,20 +15,20 @@ struct Cli {
     token: String,
 
     /// file save directory
-    #[arg(default_value = "assets")]
+    #[arg(long, default_value = "assets")]
     save_dir: String,
     /// static file url path
-    #[arg(default_value = "/assets")]
+    #[arg(long, default_value = "/assets")]
     assets_path: String,
     /// static file server domain
-    #[arg(default_value = "http://localhost:8080")]
+    #[arg(long, default_value = "http://localhost:8080")]
     domain: String,
     /// crontab expression
     /// 秒 分 时 日 月 星期 年
-    #[arg(default_value = "*/20 * * * * * *")]
+    #[arg(long, default_value = "*/20 * * * * * *")]
     cron: String,
     /// static file server listen address
-    #[arg(default_value = "0.0.0.0:8080")]
+    #[arg(long, default_value = "0.0.0.0:8080")]
     listen_addr: String,
 }
 
