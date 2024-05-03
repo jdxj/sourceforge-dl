@@ -3,13 +3,13 @@ use chrono::{DateTime, Utc};
 use delay_timer::prelude::*;
 use futures_util::StreamExt;
 use http::header::{ACCEPT, ACCEPT_ENCODING};
-use log::{debug, error, info};
+use log::{debug, error};
 use reqwest::header::HeaderMap;
 use rss::Channel;
 use std::{
     cmp::Ordering,
     error::Error,
-    fmt::{format, Display, Formatter},
+    fmt::{Display, Formatter},
     fs::File,
     io::Write,
     path::Path,
@@ -119,7 +119,7 @@ impl SourceforgeDownloader {
     }
 
     /// 启动静态文件服务
-    async fn start_static_file_server(&self) {
+    pub async fn start_static_file_server(&self) {
         let app = Router::new().nest_service(&self.assets_path, ServeDir::new(&self.save_dir));
 
         let listener = tokio::net::TcpListener::bind(&self.listen_addr)
@@ -129,7 +129,7 @@ impl SourceforgeDownloader {
     }
 
     /// 定时获取最新文件
-    async fn start_get_latest_file_job(&self) {
+    pub async fn start_get_latest_file_job(&self) {
         // 避免 self 进入闭包导致 static 生命周期问题, 这里克隆一次
         let inner_clone = self.inner.clone();
         let save_dir_clone = self.save_dir.clone();
