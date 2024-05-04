@@ -2,7 +2,7 @@ use axum::Router;
 use chrono::{DateTime, Utc};
 use delay_timer::prelude::*;
 use futures_util::StreamExt;
-use http::header::{ACCEPT, ACCEPT_ENCODING};
+use http::header::{ACCEPT, ACCEPT_ENCODING, RANGE};
 use log::{debug, error};
 use reqwest::header::HeaderMap;
 use rss::Channel;
@@ -255,20 +255,49 @@ impl SourceforgeDownloaderRef {
         save_path: &Path,
         file_meta_info: &FileMetaInfo,
     ) -> Result<(), Box<dyn Error>> {
-        debug!("开始下载: {:?}", file_meta_info);
+        // 重试限制
+        let retry_limit = 5;
+        let mut retry_num = 1;
 
-        // 下载文件
-        let req = self.http_client.get(&file_meta_info.download_url).build()?;
-        let res = self.http_client.execute(req).await?;
-        let mut stream = res.bytes_stream();
-        // 保存到本地
         let mut file = File::create(save_path)?;
-        while let Some(item) = stream.next().await {
-            let chunk = item?;
-            file.write_all(&chunk)?;
-        }
+        let mut saved_content_len = 0u64;
 
-        debug!("下载完成: {:?}", file_meta_info);
+        debug!("开始下载: {:?}", file_meta_info);
+        'download_loop: loop {
+            // 下载文件
+            let req = self
+                .http_client
+                .get(&file_meta_info.download_url)
+                .header(RANGE, format!("bytes={}-", saved_content_len))
+                .build()?;
+            let res = self.http_client.execute(req).await?;
+            let mut stream = res.bytes_stream();
+            // 保存到本地
+            while let Some(item) = stream.next().await {
+                match item {
+                    Ok(chunk) => {
+                        file.write_all(&chunk)?;
+                        saved_content_len += chunk.len() as u64;
+                    }
+                    Err(e) => {
+                        if retry_num >= retry_limit {
+                            return Err(Box::new(e));
+                        } else {
+                            error!("下载出错: {:?}, 重试次数: {}", e, retry_limit);
+                            retry_num += 1;
+                            continue 'download_loop;
+                        }
+                    }
+                }
+            }
+            break 'download_loop;
+        }
+        debug!(
+            "下载完成: {:?}, 写入字节数: {}",
+            file_meta_info, saved_content_len
+        );
+        file.flush()?;
+
         let text = format!("下载完成: {}", file_meta_info);
         self.send_message(&text).await;
         Ok(())
