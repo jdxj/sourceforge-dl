@@ -165,11 +165,11 @@ impl SourceforgeDownloader {
                         // 启动一个新 task 来下载
                         tokio::spawn(async move {
                             if let Err(e) = inner_clone.download_file(&save_path, &fmi).await {
-                                eprintln!("download file err: {:?}", e);
+                                error!("download file err: {:?}", e);
                             }
                         });
                     }
-                    Err(e) => eprintln!("error: {:?}", e),
+                    Err(e) => error!("error: {:?}", e),
                 }
             }
         };

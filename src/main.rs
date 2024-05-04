@@ -1,7 +1,7 @@
 mod sourceforge_downloader;
 
 use clap::Parser;
-use log::debug;
+use log::info;
 use sourceforge_downloader::{SourceforgeDownloader, SourceforgeDownloaderConfig};
 use tokio::join;
 
@@ -49,11 +49,13 @@ async fn main() {
         listen_addr: cli.listen_addr,
     };
 
-    debug!("starting");
+    info!("starting");
 
     let sdl = SourceforgeDownloader::new(&sdc);
     join!(
         sdl.start_static_file_server(),
         sdl.start_get_latest_file_job()
     );
+
+    info!("stopped");
 }
